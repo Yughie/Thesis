@@ -1,65 +1,51 @@
 import cv2
-import numpy as np
+from ultralytics import YOLO
 
-cap = cv2.VideoCapture(2)  # Change index if needed
+# Load the YOLOv5 model from a local file and specify the class to detect (sports ball, class index 32)
+model = YOLO("yolo11n.pt")
+model.classes = [32]
 
-if not cap.isOpened():
-    print("Error: Could not open camera.")
-    exit()
+# Initialize webcam capture
+cap = cv2.VideoCapture(1)
 
-# Attempt to set a high FPS
-cap.set(cv2.CAP_PROP_FPS, 120)  
-
-# Set resolution
-width, height = 1080, 640
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-
-# Retrieve actual FPS
-actual_fps = cap.get(cv2.CAP_PROP_FPS)
-print(f"Actual FPS: {actual_fps}")
-print(f"Resolution: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
-
-# Define HSV color range for orange (tweak if needed)
-lower_orange = np.array([5, 47, 108])  # Adjust hue, saturation, value
-upper_orange = np.array([255, 141, 255])
-
-while True:
+while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
-        print("Failed to grab frame")
         break
 
-    # Convert frame to HSV
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    # Resize frame to 640x480 for faster processing
+    frame = cv2.resize(frame, (640, 480))
 
-    # Create a mask for orange color
-    mask = cv2.inRange(hsv, lower_orange, upper_orange)
-    
-    # Find contours of the detected ball
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Perform object detection using YOLOv5
+    results = model(frame)
 
-    for contour in contours:
-        if cv2.contourArea(contour) > 500:  # Filter out small noise
-            (x, y), radius = cv2.minEnclosingCircle(contour)
-            center = (int(x), int(y))
-            radius = int(radius)
+    # Ensure results are not empty
+    if results[0].boxes is not None:
+        # Get the detected boxes
+        boxes = results[0].boxes.cpu().numpy()
 
-            if radius > 10:  # Minimum size to be considered
-                cv2.circle(frame, center, radius, (0, 255, 0), 2)  # Draw circle
-                cv2.putText(frame, "Ball Detected", (center[0] - 50, center[1] - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        # Loop through each detected object
+        for box in boxes:
+            if box[4] == 32:  # Class index for sports ball
+                x1, y1, x2, y2, conf, class_idx = box[:6]  # Unpack the first 6 values
+                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                class_name = class_list[int(class_idx)]
+                confidence = conf
 
-    # Display FPS on frame
-    cv2.putText(frame, f"FPS: {actual_fps:.2f}", (10, 30), 
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                # Draw bounding box
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-    # Show results
-    cv2.imshow("Table Tennis Ball Detection", frame)
-    cv2.imshow("Mask", mask)  # Show mask for debugging
+                # Put label above the bounding box
+                label = f"{class_name} {confidence:.2f}"
+                cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
+    # Display the frame with bounding boxes and labels
+    cv2.imshow("YOLOv5 Object Detection", frame)
+
+    # Break the loop if the 'q' key is pressed
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
+# Release the webcam and close all windows
 cap.release()
 cv2.destroyAllWindows()

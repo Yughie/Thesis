@@ -4,18 +4,21 @@ import argparse # For resolution
 import time
 
 from ultralytics import YOLO
-import supervision as sv
 
 # Check if CUDA is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
+
+model = YOLO("yolo11n.pt")
+model.classes = [32]
+model.to(device)
 
 # Configuration of resolution 
 def parse_arguments() -> argparse.Namespace: 
     parser = argparse.ArgumentParser(description="YOLOv8 Live")
     parser.add_argument(
         "--webcam-resolution",
-        default=[1024,768],
+        default=[1440, 900],
         nargs=2,
         type=int
     )
@@ -34,15 +37,8 @@ def main():
     actual_fps = cap.get(cv2.CAP_PROP_FPS)
     print(f"Actual FPS: {actual_fps}")
 
-    model = YOLO("yolo11n.pt")
-    model.to(device)
-
     class_list = model.names
     print(class_list)
-          
-    circle_annotator = sv.CircleAnnotator(
-        thickness=2
-    )
 
     fps = 0
     frame_count = 0
@@ -54,34 +50,36 @@ def main():
         if not ret:
             continue
 
-        result = model(frame)[0]
-        detections = sv.Detections.from_ultralytics(result)
-        frame = circle_annotator.annotate(scene=frame, detections=detections)
+        results = model.track(frame, persist=True)
+        #print(results)
 
-        # Iterate through detections to add labels
-        for detection in detections:
-            # Assuming detection is a tuple (bbox, class_id, confidence)
-            print(f"Detection: {detection}")
-            bbox, class_idx, confidence, *rest = detection  # Unpack the tuple
+        #Ensure results are not empty
+        if results[0].boxes.data is not None:
+            # Get the detected boxes, their class indices, and confidences
+            boxes = results[0].boxes.data.numpy()
+            class_indices = results[0].boxes.cls.numpy().astype(int)
+            confidences = results[0].boxes.conf.numpy()
             
-            print(f"bbox {bbox}")
-            print(f"id {class_idx}")
-            print(f"confidence {confidence}")
-
-
-            if class_idx is not None:
-                # Get the class label from the model's class names
-                class_label = model.names.get(class_idx, "Unknown")
+            # Loop through each detected object
             
-                # Define the position for the label (top-left corner of the bounding box)
-                label_position = (int(bbox[0]), int(bbox[1]) - 10)
+            for box, class_idx, conf in zip(boxes, class_indices, confidences):
 
-                # Create the label text
-                label_text = f"{class_label} ({confidence:.2f})"
+                x1, y1, x2, y2 = map(int, box[:4])  # Unpack the first 4 values as integers
 
-                # Add the label text to the frame
-                cv2.putText(frame, label_text, label_position,
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                # Calculate the Center of the Box
+                cx = (x1 + x2) // 2 
+                cy = (y1 + y2) // 2
+                cv2.circle(frame, (cx, cy), 3, (0, 0, 255), -1)
+
+                class_name = class_list[class_idx]
+                # Draw bounding box
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+
+                # Put label above the bounding box
+                label = f"{class_name} {conf:.2f}"
+                cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+
+    
 
         # Calculate FPS
         frame_count += 1
