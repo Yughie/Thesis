@@ -1,51 +1,67 @@
 import cv2
+import torch
+import argparse # For resolution
+import time
+
 from ultralytics import YOLO
 
-# Load the YOLOv5 model from a local file and specify the class to detect (sports ball, class index 32)
-model = YOLO("yolo11n.pt")
-model.classes = [32]
+# Check if CUDA is available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Initialize webcam capture
-cap = cv2.VideoCapture(1)
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
+# Configuration of resolution 
+def parse_arguments() -> argparse.Namespace: 
+    parser = argparse.ArgumentParser(description="YOLOv8 Live")
+    parser.add_argument(
+        "--webcam-resolution",
+        default=[100, 100],
+        nargs=2,
+        type=int
+    )
+    args = parser.parse_args()
+    return args
 
-    # Resize frame to 640x480 for faster processing
-    frame = cv2.resize(frame, (640, 480))
+def main():
+    args = parse_arguments()
+    frame_width, frame_height = args.webcam_resolution
 
-    # Perform object detection using YOLOv5
-    results = model(frame)
+    cap = cv2.VideoCapture(0) # Get the feed of camera 
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
 
-    # Ensure results are not empty
-    if results[0].boxes is not None:
-        # Get the detected boxes
-        boxes = results[0].boxes.cpu().numpy()
+    # Retrieve actual FPS
+    actual_fps = cap.get(cv2.CAP_PROP_FPS)
+    print(f"Actual FPS: {actual_fps}")
 
-        # Loop through each detected object
-        for box in boxes:
-            if box[4] == 32:  # Class index for sports ball
-                x1, y1, x2, y2, conf, class_idx = box[:6]  # Unpack the first 6 values
-                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                class_name = class_list[int(class_idx)]
-                confidence = conf
 
-                # Draw bounding box
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    fps = 0
+    frame_count = 0
+    prev_time = time.time()
 
-                # Put label above the bounding box
-                label = f"{class_name} {confidence:.2f}"
-                cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
-    # Display the frame with bounding boxes and labels
-    cv2.imshow("YOLOv5 Object Detection", frame)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            continue
 
-    # Break the loop if the 'q' key is pressed
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        # Calculate FPS
+        frame_count += 1
+        if frame_count % 10 == 0:  # Update FPS every 10 frames
+            curr_time = time.time()
+            fps = frame_count / (curr_time - prev_time)
+            prev_time = curr_time
+            frame_count = 0
 
-# Release the webcam and close all windows
-cap.release()
-cv2.destroyAllWindows()
+        # Display FPS on the frame
+        fps_text = f"FPS: {fps:.2f}"
+        cv2.putText(frame, fps_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+
+
+        cv2.imshow("yolov11", frame)
+
+       #print(frame.shape) # Show resolution
+        if (cv2.waitKey(30) == 27):
+            break
+
+if __name__ == "__main__":
+    main()
