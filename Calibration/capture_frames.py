@@ -6,11 +6,12 @@ import time
 # Global flags and locks
 recording = False
 capture_screenshot = {0: False, 2: False}  # Separate flags for each camera
+screenshot_count = {0: 1, 2: 1}  # Track screenshot numbering per camera
 lock = threading.Lock()
 frame_dict = {}  # Store frames for display in the main thread
 
 def capture_frames(camera_id, resolution=(1280, 720), fps=120, save_folder='', screenshot_folder=''):
-    global recording, capture_screenshot, frame_dict
+    global recording, capture_screenshot, frame_dict, screenshot_count
     cap = cv2.VideoCapture(camera_id)
 
     # Set Camera Properties
@@ -56,15 +57,14 @@ def capture_frames(camera_id, resolution=(1280, 720), fps=120, save_folder='', s
 
             # Screenshot capture (only once per keypress)
             if capture_screenshot[camera_id]:
-                timestamp = time.strftime("%Y%m%d-%H%M%S")
-                if(camera_id == 0):
-                    screenshot_filename = os.path.join(screenshot_folder, f"left_camera_{camera_id}_{timestamp}.png")
-                else:
-                    screenshot_filename = os.path.join(screenshot_folder, f"right_camera_{camera_id}_{timestamp}.png")
+                screenshot_filename = os.path.join(screenshot_folder, f"{screenshot_count[camera_id]}.png")
 
                 cv2.imwrite(screenshot_filename, frame)
                 print(f"Camera {camera_id}: Screenshot saved: {screenshot_filename}")
-                
+
+                # Increment screenshot count
+                screenshot_count[camera_id] += 1
+
                 # Reset flag after saving
                 capture_screenshot[camera_id] = False
 
@@ -72,10 +72,7 @@ def capture_frames(camera_id, resolution=(1280, 720), fps=120, save_folder='', s
         with lock:
             if recording and video_writer is None:
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
-                if(camera_id == 0):
-                    filename = os.path.join(save_folder, f"left_camera_{camera_id}_{timestamp}.avi")
-                else: 
-                    filename = os.path.join(save_folder, f"right_camera_{camera_id}_{timestamp}.avi")
+                filename = os.path.join(save_folder, f"{timestamp}.avi")
                 video_writer = cv2.VideoWriter(filename, fourcc, fps, resolution)
                 print(f"Camera {camera_id}: Recording started: {filename}")
 
